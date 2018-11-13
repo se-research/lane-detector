@@ -162,21 +162,47 @@ int32_t main(int32_t argc, char **argv) {
                     // Find contours.
                     cv::findContours(img, listOfContours, hierarchy, CV_RETR_TREE, CV_CHAIN_APPROX_SIMPLE, cv::Point(0, 0));
 
+//                    if (VERBOSE) {
+//                        const cv::Scalar WHITE(255, 255, 255);
+
+//                        cv::Mat imageWithContours(img.size().height, img.size().width, CV_32F);
+//                        for(auto i = 0u; i < listOfContours.size(); i++) {
+//                            cv::drawContours(imageWithContours, listOfContours, i, WHITE, 1, 8, hierarchy, 0, cv::Point());
+//                        }
+
+//                        std::stringstream sstr;
+//                        sstr << sharedMemory->name() << "-contours";
+//                        const std::string windowName = sstr.str();
+//                        cv::imshow(windowName.c_str(), imageWithContours);
+//                        cv::waitKey(1);
+//                    }
+                }
+
+                ////////////////////////////////////////////////////////////////
+                std::vector<std::vector<cv::Point> > listOfPolygonalContours;
+                listOfPolygonalContours.resize(listOfContours.size());
+                {
+                    // Find polygonal contours.
+                    for(auto i = 0u; i < listOfContours.size(); i++) {
+                        cv::approxPolyDP(cv::Mat(listOfContours[i]), listOfPolygonalContours[i], 3 /* epsilon */, true /* is it closed? */);
+                    }
+
                     if (VERBOSE) {
                         const cv::Scalar WHITE(255, 255, 255);
 
-                        cv::Mat imageWithContours(img.size().height, img.size().width, CV_32F);
-                        for(auto i = 0u; i < listOfContours.size(); i++) {
-                            cv::drawContours(imageWithContours, listOfContours, i, WHITE, 1, 8, hierarchy, 0, cv::Point());
+                        cv::Mat imageWithPolygonalContours(img.size().height, img.size().width, CV_32F);
+                        for(auto i = 0u; i < listOfPolygonalContours.size(); i++) {
+                            cv::drawContours(imageWithPolygonalContours, listOfPolygonalContours, i, WHITE, 1, 8, hierarchy, 0, cv::Point());
                         }
 
                         std::stringstream sstr;
-                        sstr << sharedMemory->name() << "-contours";
+                        sstr << sharedMemory->name() << "-polygonal contours";
                         const std::string windowName = sstr.str();
-                        cv::imshow(windowName.c_str(), imageWithContours);
+                        cv::imshow(windowName.c_str(), imageWithPolygonalContours);
                         cv::waitKey(1);
                     }
                 }
+
 
 
                 ////////////////////////////////////////////////////////////////
