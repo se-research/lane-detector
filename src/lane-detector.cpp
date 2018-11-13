@@ -26,6 +26,7 @@
 #include <memory>
 #include <mutex>
 #include <sstream>
+#include <vector>
 
 int32_t main(int32_t argc, char **argv) {
     int32_t retCode{1};
@@ -97,11 +98,12 @@ int32_t main(int32_t argc, char **argv) {
                 }
                 sharedMemory->unlock();
 
+                ////////////////////////////////////////////////////////////////
                 // Display image.
-                if (VERBOSE) {
-                    cv::imshow(sharedMemory->name().c_str(), img);
-                    cv::waitKey(1);
-                }
+//                if (VERBOSE) {
+//                    cv::imshow(sharedMemory->name().c_str(), img);
+//                    cv::waitKey(1);
+//                }
 
                 ////////////////////////////////////////////////////////////////
                 {
@@ -114,13 +116,13 @@ int32_t main(int32_t argc, char **argv) {
                     // Turn image into grayscale.
                     cv::cvtColor(img, img, CV_BGR2GRAY);
 
-                    if (VERBOSE) {
-                        std::stringstream sstr;
-                        sstr << sharedMemory->name() << "-grayscale";
-                        const std::string windowName = sstr.str();
-                        cv::imshow(windowName.c_str(), img);
-                        cv::waitKey(1);
-                    }
+//                    if (VERBOSE) {
+//                        std::stringstream sstr;
+//                        sstr << sharedMemory->name() << "-grayscale";
+//                        const std::string windowName = sstr.str();
+//                        cv::imshow(windowName.c_str(), img);
+//                        cv::waitKey(1);
+//                    }
                 }
 
                 ////////////////////////////////////////////////////////////////
@@ -130,13 +132,13 @@ int32_t main(int32_t argc, char **argv) {
                     // Cropping image.
                     img = img(cv::Rect(1, 6 * height / 16 - 1, width - 1, 8 * height / 16 - 1));
 
-                    if (VERBOSE) {
-                        std::stringstream sstr;
-                        sstr << sharedMemory->name() << "-cropped";
-                        const std::string windowName = sstr.str();
-                        cv::imshow(windowName.c_str(), img);
-                        cv::waitKey(1);
-                    }
+//                    if (VERBOSE) {
+//                        std::stringstream sstr;
+//                        sstr << sharedMemory->name() << "-cropped";
+//                        const std::string windowName = sstr.str();
+//                        cv::imshow(windowName.c_str(), img);
+//                        cv::waitKey(1);
+//                    }
                 }
 
                 ////////////////////////////////////////////////////////////////
@@ -153,6 +155,28 @@ int32_t main(int32_t argc, char **argv) {
                     }
                 }
 
+                ////////////////////////////////////////////////////////////////
+                std::vector<std::vector<cv::Point> > listOfContours;
+                std::vector<cv::Vec4i> hierarchy;
+                {
+                    // Find contours.
+                    cv::findContours(img, listOfContours, hierarchy, CV_RETR_TREE, CV_CHAIN_APPROX_SIMPLE, cv::Point(0, 0));
+
+                    if (VERBOSE) {
+                        const cv::Scalar WHITE(255, 255, 255);
+
+                        cv::Mat imageWithContours(img.size().height, img.size().width, CV_32F);
+                        for(auto i = 0u; i < listOfContours.size(); i++) {
+                            cv::drawContours(imageWithContours, listOfContours, i, WHITE, 1, 8, hierarchy, 0, cv::Point());
+                        }
+
+                        std::stringstream sstr;
+                        sstr << sharedMemory->name() << "-contours";
+                        const std::string windowName = sstr.str();
+                        cv::imshow(windowName.c_str(), imageWithContours);
+                        cv::waitKey(1);
+                    }
+                }
 
 
                 ////////////////////////////////////////////////////////////////
