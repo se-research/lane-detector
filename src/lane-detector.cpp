@@ -25,6 +25,7 @@
 #include <iostream>
 #include <memory>
 #include <mutex>
+#include <sstream>
 
 int32_t main(int32_t argc, char **argv) {
     int32_t retCode{1};
@@ -94,6 +95,20 @@ int32_t main(int32_t argc, char **argv) {
                 if (VERBOSE) {
                     cv::imshow(sharedMemory->name().c_str(), img);
                     cv::waitKey(1);
+                }
+
+                ////////////////////////////////////////////////////////////////
+                {
+                    // Turn image into grayscale.
+                    cv::cvtColor(img, img, CV_BGR2GRAY);
+
+                    if (VERBOSE) {
+                        std::stringstream sstr;
+                        sstr << sharedMemory->name() << "-grayscale";
+                        const std::string windowName = sstr.str();
+                        cv::imshow(windowName.c_str(), img);
+                        cv::waitKey(1);
+                    }
                 }
 
                 ////////////////////////////////////////////////////////////////
