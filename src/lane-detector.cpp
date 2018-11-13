@@ -112,6 +112,22 @@ int32_t main(int32_t argc, char **argv) {
                 }
 
                 ////////////////////////////////////////////////////////////////
+                int32_t height = img.size().height;
+                int32_t width = img.size().width;
+                {
+                    // Cropping image.
+                    img = img(cv::Rect(1, 6 * height / 16 - 1, width - 1, 8 * height / 16 - 1));
+
+                    if (VERBOSE) {
+                        std::stringstream sstr;
+                        sstr << sharedMemory->name() << "-cropped";
+                        const std::string windowName = sstr.str();
+                        cv::imshow(windowName.c_str(), img);
+                        cv::waitKey(1);
+                    }
+                }
+
+                ////////////////////////////////////////////////////////////////
                 // Example for creating and sending a message to other microservices; can
                 // be removed when not needed.
                 opendlv::proxy::AngleReading ar;
