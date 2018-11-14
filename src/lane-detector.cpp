@@ -63,12 +63,14 @@ int32_t main(int32_t argc, char **argv) {
          (0 == commandlineArguments.count("height")) ) {
         std::cerr << argv[0] << " attaches to a shared memory area containing an ARGB image." << std::endl;
         std::cerr << "Usage:   " << argv[0] << " --cid=<OD4 session> --name=<name of shared memory area> [--verbose]" << std::endl;
-        std::cerr << "         --cid:           CID of the OD4Session to send and receive messages" << std::endl;
-        std::cerr << "         --name:          name of the shared memory area to attach" << std::endl;
-        std::cerr << "         --width:         width of the frame" << std::endl;
-        std::cerr << "         --height:        height of the frame" << std::endl;
-        std::cerr << "         --threshold:     binary threshold value (default: 115)" << std::endl;
-        std::cerr << "         --steeringscale: scaling factor for steering (default: 10)" << std::endl;
+        std::cerr << "         --cid:                CID of the OD4Session to send and receive messages" << std::endl;
+        std::cerr << "         --name:                name of the shared memory area to attach" << std::endl;
+        std::cerr << "         --width:               width of the frame" << std::endl;
+        std::cerr << "         --height:              height of the frame" << std::endl;
+        std::cerr << "         --threshold:           binary threshold value (default: 115)" << std::endl;
+        std::cerr << "         --steeringscale:       scaling factor for steering (default: 10)" << std::endl;
+        std::cerr << "         --steeringoffset:      offset for steering to be added (default: 0)" << std::endl;
+        std::cerr << "         --verticalslopefilter: filter vertical slopes larger than this (default: 75.0), eg. white poles left/right" << std::endl;
         std::cerr << "Example: " << argv[0] << " --cid=253 --name=img.argb --width=640 --height=480 --verbose" << std::endl;
     }
     else {
@@ -81,6 +83,8 @@ int32_t main(int32_t argc, char **argv) {
         // Parameters for lane-detector.
         const uint32_t THRESHOLD{commandlineArguments.count("verbose") != 0 ? static_cast<uint32_t>(std::stoi(commandlineArguments["threshold"])) : 115};
         const float STEERING_SCALE{commandlineArguments.count("steeringscale") != 0 ? static_cast<float>(std::stof(commandlineArguments["steeringscale"])) : 10.f};
+        const float STEERING_OFFSET{commandlineArguments.count("steeringoffset") != 0 ? static_cast<float>(std::stof(commandlineArguments["steeringoffset"])) : 0.f};
+        const float VERTICAL_SLOPE_FILTER{commandlineArguments.count("verticalslopefilter") != 0 ? static_cast<float>(std::stof(commandlineArguments["verticalslopefilter"])) : 75.f};
 
         // Attach to the shared memory.
         std::unique_ptr<cluon::SharedMemory> sharedMemory{new cluon::SharedMemory{NAME}};
@@ -544,6 +548,12 @@ int32_t main(int32_t argc, char **argv) {
                         CustomLine l = dashLines[i];
 
                         // If slope is negative, it's a left line.
+
+                        // Skip white poles left/right.
+                        if (fabs(l.slope) > VERTICAL_SLOPE_FILTER) {
+                            continue;
+                        }
+
                         if (l.slope < 0) {
                             // If it's longer go for it...
                             if (selectedLeftLine.length < l.length) {
@@ -564,6 +574,11 @@ int32_t main(int32_t argc, char **argv) {
                         CustomLine l = solidLines[i];
 
                         // If slope is negative, it's a left line.
+                        // Skip white poles left/right.
+                        if (fabs(l.slope) > VERTICAL_SLOPE_FILTER) {
+                            continue;
+                        }
+
                         if (l.slope < 0) {
                             // If it's longer go for it...
                             if (selectedLeftLine.length < l.length) {
@@ -630,14 +645,18 @@ int32_t main(int32_t argc, char **argv) {
                     steering = bottomCenter.x - filteredVanishingPoint.x;
                     steering /= width/STEERING_SCALE;
                     // Map to increments of 0.25;
-                    steering = floorf(steering * 4.0f)/4.0f;
+                    steering = floorf(steering * 4.0f)/4.0f + STEERING_OFFSET;
 
                     if (VERBOSE) {
+                        const cv::Scalar RED(0, 0, 255);
+                        const cv::Scalar BLUE(255, 0, 0);
                         const cv::Scalar GREEN(0, 255, 0);
 
                         cv::Mat imageWithVanishingPoint;
                         originalImage.copyTo(imageWithVanishingPoint);
 
+                        cv::line(imageWithVanishingPoint, selectedLeftLine.p1, selectedLeftLine.p2, RED, 3, 8, 0);
+                        cv::line(imageWithVanishingPoint, selectedRightLine.p1, selectedRightLine.p2, BLUE, 3, 8);
                         cv::line(imageWithVanishingPoint, bottomCenter, filteredVanishingPoint, GREEN, 3, 8, 0);
                         {
                             std::stringstream sstr;
