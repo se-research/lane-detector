@@ -448,7 +448,7 @@ int32_t main(int32_t argc, char **argv) {
                     }
 
                     const float MIN_ANGLE{15.0f};
-                    for (int j = 0; j < cntSolid; j++) {
+                    for (auto j = 0u; j < cntSolid; j++) {
                         float a = tanf(static_cast<float>(M_PI) * solidLines[j].slope / 180.0f);
                         cv::Point center;
                         center.x = (solidLines[j].p1.x + solidLines[j].p2.x) / 2;
@@ -484,7 +484,7 @@ int32_t main(int32_t argc, char **argv) {
                     }
 
                     //Dash also positioned too high on the image or too left or too right
-                    for (int i = 0; i < cntDash; i++) {
+                    for (auto i = 0u; i < cntDash; i++) {
                         CustomLine l = dashLines[i];
                         int dashCenterX = (l.p1.x + l.p2.x) / 2;
                         int dashCenterY = (l.p1.y + l.p2.y) / 2;
@@ -500,7 +500,7 @@ int32_t main(int32_t argc, char **argv) {
                         }
                     }
 
-                    for (int i = 0; i < cntSolid; i++) {
+                    for (auto i = 0u; i < cntSolid; i++) {
                         CustomLine l = solidLines[i];
 //std::cout << "Slope solid = " << l.slope << ", l = " << l.length << std::endl;
                         if ((l.slope < MIN_ANGLE) && (l.slope > ((-1) * MIN_ANGLE))) {
@@ -538,11 +538,11 @@ int32_t main(int32_t argc, char **argv) {
                 // Select the left and right lines and compute vanishing point.
                 CustomLine selectedLeftLine;
                 CustomLine selectedRightLine;
-                const cv::Point bottomCenter(width/2.0, height);
+                const cv::Point bottomCenter(width/2.0f, height);
                 cv::Point2f VP;
                 bool gotVanishingPoint{false};
                 {
-                    for (int i = 0; i < cntDash; i++) {
+                    for (auto i = 0u; i < cntDash; i++) {
                         CustomLine l = dashLines[i];
 
                         // If slope is negative, it's a left line.
@@ -562,7 +562,7 @@ int32_t main(int32_t argc, char **argv) {
                         }
                     }
 
-                    for (int i = 0; i < cntSolid; i++) {
+                    for (auto i = 0u; i < cntSolid; i++) {
                         CustomLine l = solidLines[i];
 
                         // If slope is negative, it's a left line.
@@ -632,7 +632,7 @@ int32_t main(int32_t argc, char **argv) {
                     steering = bottomCenter.x - filteredVanishingPoint.x;
                     steering /= width/STEERING_SCALE;
                     // Map to increments of 0.25;
-                    steering = floorf(steering * 4.0)/4.0;
+                    steering = floorf(steering * 4.0f)/4.0f;
 
                     if (VERBOSE) {
                         const cv::Scalar GREEN(0, 255, 0);
@@ -641,6 +641,12 @@ int32_t main(int32_t argc, char **argv) {
                         originalImage.copyTo(imageWithVanishingPoint);
 
                         cv::line(imageWithVanishingPoint, bottomCenter, filteredVanishingPoint, GREEN, 3, 8, 0);
+                        {
+                            std::stringstream sstr;
+                            sstr << "Steering: " << steering;
+                            const std::string text = sstr.str();
+                            cv::putText(imageWithVanishingPoint, text.c_str(), cv::Point(10, 12), cv::FONT_HERSHEY_PLAIN, 1.0 /* font scale*/, GREEN);
+                        }
 
                         std::stringstream sstr;
                         sstr << sharedMemory->name() << "-vanishing point";
