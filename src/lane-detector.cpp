@@ -115,7 +115,7 @@ int32_t main(int32_t argc, char **argv) {
             };
 
             auto getLength = [](const cv::Point &p1, const cv::Point &p2) {
-                return std::sqrt(std::pow(p1.x - p2.x, 2) + std::pow(p1.y - p2.y, 2));
+                return sqrtf(powf(p1.x - p2.x, 2) + powf(p1.y - p2.y, 2));
             };
 
             auto createLineFromRect = [&getLength](cv::RotatedRect *rect, int sizeY) {
@@ -128,20 +128,20 @@ int32_t main(int32_t argc, char **argv) {
                     float angle = rect->angle * static_cast<float>(M_PI)/180.0f;
                     float xOffset = cosf(angle) * sizeY / 2.0f;
                     float yOffset = sinf(angle) * sizeY / 2.0f;
-                    pt1.y = rect->center.y + yOffset;
-                    pt1.x = rect->center.x + xOffset;
-                    pt2.y = rect->center.y - yOffset;
-                    pt2.x = rect->center.x - xOffset;
+                    pt1.y = static_cast<int>(rect->center.y + yOffset);
+                    pt1.x = static_cast<int>(rect->center.x + xOffset);
+                    pt2.y = static_cast<int>(rect->center.y - yOffset);
+                    pt2.x = static_cast<int>(rect->center.x - xOffset);
                 }
                 else {
                     rect->angle = rect->angle - 180.0f;
                     float angle = (-rect->angle) * static_cast<float>(M_PI)/180.0f;
                     float xOffset = cosf(angle) * sizeY / 2.0f;
                     float yOffset = sinf(angle) * sizeY / 2.0f;
-                    pt1.y = rect->center.y + yOffset;
-                    pt1.x = rect->center.x - xOffset;
-                    pt2.y = rect->center.y - yOffset;
-                    pt2.x = rect->center.x + xOffset;
+                    pt1.y = static_cast<int>(rect->center.y + yOffset);
+                    pt1.x = static_cast<int>(rect->center.x - xOffset);
+                    pt2.y = static_cast<int>(rect->center.y - yOffset);
+                    pt2.x = static_cast<int>(rect->center.x + xOffset);
                 }
                 l.p1 = pt1;
                 l.p2 = pt2;
@@ -165,7 +165,7 @@ int32_t main(int32_t argc, char **argv) {
                     return false;
                 }
 
-                double t1 = (x.x * d2.y - x.y * d2.x)/cross;
+                float t1 = (x.x * d2.y - x.y * d2.x)/cross;
                 r = o1 + d1 * t1;
                 return true;
             };
@@ -417,7 +417,6 @@ int32_t main(int32_t argc, char **argv) {
                     // Classify lines.
                     int sizeX;
                     int sizeY;
-                    int sizeR;
                     int area;
                     cv::RotatedRect rect;
                     cv::Point2f rect_points[4];
@@ -426,13 +425,12 @@ int32_t main(int32_t argc, char **argv) {
                     for (auto i = 0u; i < line_sizes.size(); i++) {
                         sizeX = line_sizes[i].sizeX;
                         sizeY = line_sizes[i].sizeY;
-                        sizeR = line_sizes[i].sizeR;
                         shortSideMiddle = line_sizes[i].shortSideMiddle;
                         area = sizeX * sizeY;
                         rect = rects[i];
                         rect.points(rect_points);
-                        rectCenter.x = static_cast<float>(rect.center.x);
-                        rectCenter.y = static_cast<float>(rect.center.y);
+                        rectCenter.x = static_cast<int>(rect.center.x);
+                        rectCenter.y = static_cast<int>(rect.center.y);
                         rect.angle = getLineSlope(shortSideMiddle, rectCenter);
                         if (sizeY > conf.XTimesYMin * sizeX
                             && sizeY < conf.XTimesYMax * sizeX
@@ -458,7 +456,7 @@ int32_t main(int32_t argc, char **argv) {
                              && std::max(solidLines[j].p1.x, solidLines[j].p2.x) > width / 2)
                             || (solidLines[j].slope < (-1) * (MIN_ANGLE - 5)
                                 && std::min(solidLines[j].p1.x, solidLines[j].p2.x) < width / 2)) {
-                            for (int l = 0; l < cntDash; l++) {
+                            for (auto l = 0u; l < cntDash; l++) {
                                 cv::Point dashCenter;
                                 dashCenter.x = (dashLines[l].p1.x + dashLines[l].p2.x) / 2;
                                 dashCenter.y = (dashLines[l].p1.y + dashLines[l].p2.y) / 2;
@@ -469,7 +467,7 @@ int32_t main(int32_t argc, char **argv) {
                                     l--;
                                 }
                             }
-                            for (int k = j + 1; k < cntSolid; k++) {
+                            for (auto k = j + 1; k < cntSolid; k++) {
                                 cv::Point sldCenter;
                                 sldCenter.x = (solidLines[k].p1.x + solidLines[k].p2.x) / 2;
                                 sldCenter.y = (solidLines[k].p1.y + solidLines[k].p2.y) / 2;
@@ -489,7 +487,7 @@ int32_t main(int32_t argc, char **argv) {
                         int dashCenterX = (l.p1.x + l.p2.x) / 2;
                         int dashCenterY = (l.p1.y + l.p2.y) / 2;
 //std::cout << "Slope dash = " << l.slope << ", l = " << l.length << std::endl;
-                        if ((l.slope < MIN_ANGLE) && (l.slope > ((-1) * MIN_ANGLE))
+                        if ( ((l.slope < MIN_ANGLE) && (l.slope > ((-1) * MIN_ANGLE)))
                             || (dashCenterY < (height / 2)) || (dashCenterX > 19 * width / 20) || (dashCenterX < width/20) ) // too left //too high
                         {
                             dashLines[i] = dashLines[cntDash - 1];
@@ -538,7 +536,7 @@ int32_t main(int32_t argc, char **argv) {
                 // Select the left and right lines and compute vanishing point.
                 CustomLine selectedLeftLine;
                 CustomLine selectedRightLine;
-                const cv::Point bottomCenter(width/2.0f, height);
+                const cv::Point2f bottomCenter(width/2.0f, height);
                 cv::Point2f VP;
                 bool gotVanishingPoint{false};
                 {
@@ -610,12 +608,12 @@ int32_t main(int32_t argc, char **argv) {
                 }
 
                 ////////////////////////////////////////////////////////////////
-                cv::Point filteredVanishingPoint;
+                cv::Point2f filteredVanishingPoint;
                 float steering{0};
                 {
                     // Apply Kalman filter
                     cv::Mat prediction = KF.predict();
-                    cv::Point predictPt(prediction.at<float>(0), prediction.at<float>(1));
+                    cv::Point2f predictPt(prediction.at<float>(0), prediction.at<float>(1));
 
                     if (gotVanishingPoint) {
                         measurement(0) = VP.x;
@@ -625,7 +623,7 @@ int32_t main(int32_t argc, char **argv) {
                     // The update phase 
                     cv::Mat estimated = KF.correct(measurement);
 
-                    filteredVanishingPoint = cv::Point(estimated.at<float>(0), estimated.at<float>(1));
+                    filteredVanishingPoint = cv::Point2f(estimated.at<float>(0), estimated.at<float>(1));
 //                    cv::Point measPt(measurement(0), measurement(1));
 
                     // Derive steering values.
