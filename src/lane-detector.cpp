@@ -63,11 +63,12 @@ int32_t main(int32_t argc, char **argv) {
          (0 == commandlineArguments.count("height")) ) {
         std::cerr << argv[0] << " attaches to a shared memory area containing an ARGB image." << std::endl;
         std::cerr << "Usage:   " << argv[0] << " --cid=<OD4 session> --name=<name of shared memory area> [--verbose]" << std::endl;
-        std::cerr << "         --cid:       CID of the OD4Session to send and receive messages" << std::endl;
-        std::cerr << "         --name:      name of the shared memory area to attach" << std::endl;
-        std::cerr << "         --width:     width of the frame" << std::endl;
-        std::cerr << "         --height:    height of the frame" << std::endl;
-        std::cerr << "         --threshold: binary threshold value (default: 115)" << std::endl;
+        std::cerr << "         --cid:           CID of the OD4Session to send and receive messages" << std::endl;
+        std::cerr << "         --name:          name of the shared memory area to attach" << std::endl;
+        std::cerr << "         --width:         width of the frame" << std::endl;
+        std::cerr << "         --height:        height of the frame" << std::endl;
+        std::cerr << "         --threshold:     binary threshold value (default: 115)" << std::endl;
+        std::cerr << "         --steeringscale: scaling factor for steering (default: 10)" << std::endl;
         std::cerr << "Example: " << argv[0] << " --cid=253 --name=img.argb --width=640 --height=480 --verbose" << std::endl;
     }
     else {
@@ -79,6 +80,7 @@ int32_t main(int32_t argc, char **argv) {
         ////////////////////////////////////////////////////////////////////////
         // Parameters for lane-detector.
         const uint32_t THRESHOLD{commandlineArguments.count("verbose") != 0 ? static_cast<uint32_t>(std::stoi(commandlineArguments["threshold"])) : 115};
+        const float STEERING_SCALE{commandlineArguments.count("steeringscale") != 0 ? static_cast<float>(std::stof(commandlineArguments["steeringscale"])) : 10.f};
 
         // Attach to the shared memory.
         std::unique_ptr<cluon::SharedMemory> sharedMemory{new cluon::SharedMemory{NAME}};
@@ -608,6 +610,8 @@ int32_t main(int32_t argc, char **argv) {
                 }
 
                 ////////////////////////////////////////////////////////////////
+                cv::Point filteredVanishingPoint;
+                float steering{0};
                 {
                     // Apply Kalman filter
                     cv::Mat prediction = KF.predict();
@@ -621,8 +625,14 @@ int32_t main(int32_t argc, char **argv) {
                     // The update phase 
                     cv::Mat estimated = KF.correct(measurement);
 
-                    cv::Point statePt(estimated.at<float>(0), estimated.at<float>(1));
+                    filteredVanishingPoint = cv::Point(estimated.at<float>(0), estimated.at<float>(1));
 //                    cv::Point measPt(measurement(0), measurement(1));
+
+                    // Derive steering values.
+                    steering = bottomCenter.x - filteredVanishingPoint.x;
+                    steering /= width/STEERING_SCALE;
+                    // Map to increments of 0.25;
+                    steering = floorf(steering * 4.0)/4.0;
 
                     if (VERBOSE) {
                         const cv::Scalar GREEN(0, 255, 0);
@@ -630,7 +640,7 @@ int32_t main(int32_t argc, char **argv) {
                         cv::Mat imageWithVanishingPoint;
                         originalImage.copyTo(imageWithVanishingPoint);
 
-                        cv::line(imageWithVanishingPoint, bottomCenter, statePt, GREEN, 3, 8, 0);
+                        cv::line(imageWithVanishingPoint, bottomCenter, filteredVanishingPoint, GREEN, 3, 8, 0);
 
                         std::stringstream sstr;
                         sstr << sharedMemory->name() << "-vanishing point";
@@ -640,12 +650,9 @@ int32_t main(int32_t argc, char **argv) {
                     }
                 }
 
-                // Derive steering values.
-
-
                 ////////////////////////////////////////////////////////////////
                 opendlv::proxy::ActuationRequest ar;
-                ar.acceleration(0).steering(0).isValid(true);
+                ar.acceleration(0).steering(steering).isValid(true);
                 od4.send(ar);
             }
 
