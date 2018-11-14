@@ -16,6 +16,13 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
 
+// This message is a legacy one to support controlling Snowfox and Rhino.
+message opendlv.proxy.ActuationRequest [id = 160] {
+    float acceleration [id = 1];
+    float steering [id = 2];
+    bool isValid [id = 3];
+}
+
 message opendlv.sim.Frame [id = 1001] {
   float x [id = 1];
   float y [id = 2];
