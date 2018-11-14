@@ -36,7 +36,8 @@ class CustomLine {
     CustomLine() :
         p1(),
         p2(),
-        slope(0) {}
+        slope(0),
+        length(0) {}
 
     ~CustomLine() {}
 
@@ -50,6 +51,7 @@ class CustomLine {
 
     cv::Point p1, p2;
     float slope;
+    float length;
 };
 
 int32_t main(int32_t argc, char **argv) {
@@ -110,7 +112,11 @@ int32_t main(int32_t argc, char **argv) {
                 return slope * 180.0f / static_cast<float>(M_PI);
             };
 
-            auto createLineFromRect = [](cv::RotatedRect *rect, int sizeY) {
+            auto getLength = [](const cv::Point &p1, const cv::Point &p2) {
+                return std::sqrt(std::pow(p1.x - p2.x, 2) + std::pow(p1.y - p2.y, 2));
+            };
+
+            auto createLineFromRect = [&getLength](cv::RotatedRect *rect, int sizeY) {
                 cv::Point2f rect_points[4];
                 rect->points(rect_points);
 
@@ -138,6 +144,7 @@ int32_t main(int32_t argc, char **argv) {
                 l.p1 = pt1;
                 l.p2 = pt2;
                 l.slope = rect->angle;
+                l.length = getLength(pt1, pt2);
                 return l;
             };
 
@@ -455,13 +462,13 @@ int32_t main(int32_t argc, char **argv) {
                     }
 
                     //Dash also positioned too high on the image or too left or too right
-                    int maxDashY = 0;
                     for (int i = 0; i < cntDash; i++) {
                         CustomLine l = dashLines[i];
                         int dashCenterX = (l.p1.x + l.p2.x) / 2;
                         int dashCenterY = (l.p1.y + l.p2.y) / 2;
+std::cout << "Slope dash = " << l.slope << ", l = " << l.length << std::endl;
                         if ((l.slope < MIN_ANGLE) && (l.slope > ((-1) * MIN_ANGLE))
-                            || (dashCenterY < height / 15) || (dashCenterX > 19 * width / 20)) //|| (dashCenterX < w/20) too left //too high
+                            || (dashCenterY < (height / 2)) || (dashCenterX > 19 * width / 20) || (dashCenterX < width/20) ) // too left //too high
                         {
                             dashLines[i] = dashLines[cntDash - 1];
                             cntDash--;
@@ -469,9 +476,62 @@ int32_t main(int32_t argc, char **argv) {
                                 i--;
                             }
                         }
+                    }
 
-                        if (maxDashY < std::max(dashLines[i].p1.y, dashLines[i].p2.y)) {
-                            maxDashY = std::max(dashLines[i].p1.y, dashLines[i].p2.y);
+                    for (int i = 0; i < cntSolid; i++) {
+                        CustomLine l = solidLines[i];
+std::cout << "Slope solid = " << l.slope << ", l = " << l.length << std::endl;
+                        if ((l.slope < MIN_ANGLE) && (l.slope > ((-1) * MIN_ANGLE))) {
+                            solidLines[i] = solidLines[cntSolid - 1];
+                            cntSolid--;
+                            if (i > 0) {
+                                i--;
+                            }
+                        }
+                    }
+std::cout << std::endl;
+//                    if (VERBOSE) {
+//                        const cv::Scalar RED(0, 0, 255);
+//                        const cv::Scalar BLUE(255, 0, 0);
+
+//                        cv::Mat imageWithClassifiedLines;
+//                        originalImage.copyTo(imageWithClassifiedLines);
+
+//                        for(auto i = 0u; i < dashLines.size(); i++) {
+//                            cv::line(imageWithClassifiedLines, dashLines[i].p1, dashLines[i].p2, RED, 3, 8, 0);
+//                        }
+//                        for(auto i = 0u; i < solidLines.size(); i++) {
+//                            cv::line(imageWithClassifiedLines, solidLines[i].p1, solidLines[i].p2, BLUE, 3, 8, 0);
+//                        }
+
+//                        std::stringstream sstr;
+//                        sstr << sharedMemory->name() << "-classified lines";
+//                        const std::string windowName = sstr.str();
+//                        cv::imshow(windowName.c_str(), imageWithClassifiedLines);
+//                        cv::waitKey(1);
+//                    }
+                }
+
+                ////////////////////////////////////////////////////////////////
+                // Select the left and right lines.
+                CustomLine selectedLeftLine;
+                CustomLine selectedRightLine;
+                {
+                    for (int i = 0; i < cntDash; i++) {
+                        CustomLine l = dashLines[i];
+
+                        // If slope is negative, it's a left line.
+                        if (l.slope < 0) {
+                            if (selectedLeftLine.length < l.length) {
+                                selectedLeftLine = l;
+                            }
+                        }
+
+                        // If slope is negative, it's a right line.
+                        if (l.slope > 0) {
+                            if (selectedRightLine.length < l.length) {
+                                selectedRightLine = l;
+                            }
                         }
                     }
 
@@ -479,20 +539,16 @@ int32_t main(int32_t argc, char **argv) {
                         const cv::Scalar RED(0, 0, 255);
                         const cv::Scalar BLUE(255, 0, 0);
 
-                        cv::Mat imageWithClassifiedLines;
-                        originalImage.copyTo(imageWithClassifiedLines);
+                        cv::Mat imageWithSelectedLines;
+                        originalImage.copyTo(imageWithSelectedLines);
 
-                        for(auto i = 0u; i < dashLines.size(); i++) {
-                            cv::line(imageWithClassifiedLines, dashLines[i].p1, dashLines[i].p2, RED, 3, 8, 0);
-                        }
-                        for(auto i = 0u; i < solidLines.size(); i++) {
-                            cv::line(imageWithClassifiedLines, solidLines[i].p1, solidLines[i].p2, BLUE, 3, 8, 0);
-                        }
+                        cv::line(imageWithSelectedLines, selectedLeftLine.p1, selectedLeftLine.p2, RED, 3, 8, 0);
+                        cv::line(imageWithSelectedLines, selectedRightLine.p1, selectedRightLine.p2, BLUE, 3, 8, 0);
 
                         std::stringstream sstr;
-                        sstr << sharedMemory->name() << "-classified lines";
+                        sstr << sharedMemory->name() << "-selected lines";
                         const std::string windowName = sstr.str();
-                        cv::imshow(windowName.c_str(), imageWithClassifiedLines);
+                        cv::imshow(windowName.c_str(), imageWithSelectedLines);
                         cv::waitKey(1);
                     }
                 }
