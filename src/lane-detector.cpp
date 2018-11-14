@@ -148,6 +148,26 @@ int32_t main(int32_t argc, char **argv) {
                 return l;
             };
 
+            auto getVanishingPoint = [](const CustomLine &left, const CustomLine &right, cv::Point2f &r) {
+                const cv::Point2f o1 = left.p1;
+                const cv::Point2f p1 = left.p2;
+                const cv::Point2f o2 = right.p1;
+                const cv::Point2f p2 = right.p2;
+
+                cv::Point2f x = o2 - o1;
+                cv::Point2f d1 = p1 - o1;
+                cv::Point2f d2 = p2 - o2;
+
+                float cross = d1.x*d2.y - d1.y*d2.x;
+                if (fabs(cross) < /*EPS*/1e-8) {
+                    return false;
+                }
+
+                double t1 = (x.x * d2.y - x.y * d2.x)/cross;
+                r = o1 + d1 * t1;
+                return true;
+            };
+
             ////////////////////////////////////////////////////////////////////
             cv::KalmanFilter KF(4, 2, 0);
             KF.transitionMatrix = (cv::Mat_<float>(4, 4) << 1,0,1,0,   0,1,0,1,  0,0,1,0,  0,0,0,1);
@@ -466,7 +486,7 @@ int32_t main(int32_t argc, char **argv) {
                         CustomLine l = dashLines[i];
                         int dashCenterX = (l.p1.x + l.p2.x) / 2;
                         int dashCenterY = (l.p1.y + l.p2.y) / 2;
-std::cout << "Slope dash = " << l.slope << ", l = " << l.length << std::endl;
+//std::cout << "Slope dash = " << l.slope << ", l = " << l.length << std::endl;
                         if ((l.slope < MIN_ANGLE) && (l.slope > ((-1) * MIN_ANGLE))
                             || (dashCenterY < (height / 2)) || (dashCenterX > 19 * width / 20) || (dashCenterX < width/20) ) // too left //too high
                         {
@@ -480,7 +500,7 @@ std::cout << "Slope dash = " << l.slope << ", l = " << l.length << std::endl;
 
                     for (int i = 0; i < cntSolid; i++) {
                         CustomLine l = solidLines[i];
-std::cout << "Slope solid = " << l.slope << ", l = " << l.length << std::endl;
+//std::cout << "Slope solid = " << l.slope << ", l = " << l.length << std::endl;
                         if ((l.slope < MIN_ANGLE) && (l.slope > ((-1) * MIN_ANGLE))) {
                             solidLines[i] = solidLines[cntSolid - 1];
                             cntSolid--;
@@ -489,7 +509,7 @@ std::cout << "Slope solid = " << l.slope << ", l = " << l.length << std::endl;
                             }
                         }
                     }
-std::cout << std::endl;
+//std::cout << std::endl;
 //                    if (VERBOSE) {
 //                        const cv::Scalar RED(0, 0, 255);
 //                        const cv::Scalar BLUE(255, 0, 0);
@@ -513,16 +533,21 @@ std::cout << std::endl;
                 }
 
                 ////////////////////////////////////////////////////////////////
-                // Select the left and right lines.
+                // Select the left and right lines and compute vanishing point.
                 CustomLine selectedLeftLine;
                 CustomLine selectedRightLine;
+                const cv::Point bottomCenter(width/2.0, height);
+                cv::Point2f VP;
+                bool gotVanishingPoint{false};
                 {
                     for (int i = 0; i < cntDash; i++) {
                         CustomLine l = dashLines[i];
 
                         // If slope is negative, it's a left line.
                         if (l.slope < 0) {
+                            // If it's longer go for it...
                             if (selectedLeftLine.length < l.length) {
+                                // but only if it's not too far away from image center.
                                 selectedLeftLine = l;
                             }
                         }
@@ -535,44 +560,85 @@ std::cout << std::endl;
                         }
                     }
 
+                    for (int i = 0; i < cntSolid; i++) {
+                        CustomLine l = solidLines[i];
+
+                        // If slope is negative, it's a left line.
+                        if (l.slope < 0) {
+                            // If it's longer go for it...
+                            if (selectedLeftLine.length < l.length) {
+                                // but only if it's not too far away from image center.
+                                selectedLeftLine = l;
+                            }
+                        }
+
+                        // If slope is negative, it's a right line.
+                        if (l.slope > 0) {
+                            if (selectedRightLine.length < l.length) {
+                                selectedRightLine = l;
+                            }
+                        }
+                    }
+
+                    // Compute vanishing point.
+                    gotVanishingPoint = getVanishingPoint(selectedLeftLine, selectedRightLine, VP);
+
+//                    if (VERBOSE) {
+//                        const cv::Scalar RED(0, 0, 255);
+//                        const cv::Scalar BLUE(255, 0, 0);
+//                        const cv::Scalar GREEN(0, 255, 0);
+
+//                        cv::Mat imageWithSelectedLines;
+//                        originalImage.copyTo(imageWithSelectedLines);
+
+//                        cv::line(imageWithSelectedLines, selectedLeftLine.p1, selectedLeftLine.p2, RED, 3, 8, 0);
+//                        cv::line(imageWithSelectedLines, selectedRightLine.p1, selectedRightLine.p2, BLUE, 3, 8, 0);
+
+//                        if (gotVanishingPoint) {
+//                            cv::Point bottomCenter(width/2.0, height);
+//                            cv::line(imageWithSelectedLines, bottomCenter, VP, GREEN, 3, 8, 0);
+//                        }
+
+//                        std::stringstream sstr;
+//                        sstr << sharedMemory->name() << "-selected lines";
+//                        const std::string windowName = sstr.str();
+//                        cv::imshow(windowName.c_str(), imageWithSelectedLines);
+//                        cv::waitKey(1);
+//                    }
+                }
+
+                ////////////////////////////////////////////////////////////////
+                {
+                    // Apply Kalman filter
+                    cv::Mat prediction = KF.predict();
+                    cv::Point predictPt(prediction.at<float>(0), prediction.at<float>(1));
+
+                    if (gotVanishingPoint) {
+                        measurement(0) = VP.x;
+                        measurement(1) = VP.y;
+                    }
+
+                    // The update phase 
+                    cv::Mat estimated = KF.correct(measurement);
+
+                    cv::Point statePt(estimated.at<float>(0), estimated.at<float>(1));
+//                    cv::Point measPt(measurement(0), measurement(1));
+
                     if (VERBOSE) {
-                        const cv::Scalar RED(0, 0, 255);
-                        const cv::Scalar BLUE(255, 0, 0);
+                        const cv::Scalar GREEN(0, 255, 0);
 
-                        cv::Mat imageWithSelectedLines;
-                        originalImage.copyTo(imageWithSelectedLines);
+                        cv::Mat imageWithVanishingPoint;
+                        originalImage.copyTo(imageWithVanishingPoint);
 
-                        cv::line(imageWithSelectedLines, selectedLeftLine.p1, selectedLeftLine.p2, RED, 3, 8, 0);
-                        cv::line(imageWithSelectedLines, selectedRightLine.p1, selectedRightLine.p2, BLUE, 3, 8, 0);
+                        cv::line(imageWithVanishingPoint, bottomCenter, statePt, GREEN, 3, 8, 0);
 
                         std::stringstream sstr;
-                        sstr << sharedMemory->name() << "-selected lines";
+                        sstr << sharedMemory->name() << "-vanishing point";
                         const std::string windowName = sstr.str();
-                        cv::imshow(windowName.c_str(), imageWithSelectedLines);
+                        cv::imshow(windowName.c_str(), imageWithVanishingPoint);
                         cv::waitKey(1);
                     }
                 }
-
-                // TODO:
-                // Compute Vanishing point
-                // Go through list of lines:
-                // if slope is < 0: pointing to right, otherwise to left
-                // pick the longest
-                // discard angles that don't make sense.
-                // compute VP
-
-                // Apply Kalman filter
-                cv::Mat prediction = KF.predict();
-                cv::Point predictPt(prediction.at<float>(0), prediction.at<float>(1));
-
-//                measurement(0) = VP.x;
-//                measurement(1) = VP.y;
-
-                // The update phase 
-                cv::Mat estimated = KF.correct(measurement);
-
-                cv::Point statePt(estimated.at<float>(0), estimated.at<float>(1));
-//                cv::Point measPt(measurement(0), measurement(1));
 
                 // Derive steering values.
 
