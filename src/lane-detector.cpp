@@ -25,11 +25,14 @@
 #include <cmath>
 #include <cstdint>
 #include <algorithm>
+#include <deque>
 #include <iostream>
 #include <memory>
 #include <mutex>
 #include <sstream>
 #include <vector>
+
+// ./lane-detector --cid=110 --name=img.argb --width=640 --heigh480 --threshold=110 --verticalslopefilter=70 --k_p=.25 --k_d=.01 --delay=5 --camera_offset=-35 --verbose
 
 class CustomLine {
    public:
@@ -68,8 +71,10 @@ int32_t main(int32_t argc, char **argv) {
         std::cerr << "         --width:               width of the frame" << std::endl;
         std::cerr << "         --height:              height of the frame" << std::endl;
         std::cerr << "         --threshold:           binary threshold value (default: 115)" << std::endl;
-        std::cerr << "         --steeringscale:       scaling factor for steering (default: 10)" << std::endl;
-        std::cerr << "         --steeringoffset:      offset for steering to be added (default: 0)" << std::endl;
+        std::cerr << "         --camera_offset:       mounting offset in pixels (default: 0)" << std::endl;
+        std::cerr << "         --k_p:                 gain K_p (default: 1.0)" << std::endl;
+        std::cerr << "         --k_d:                 gain K_d (default: 1.0)" << std::endl;
+        std::cerr << "         --delay:               after how many entries in the delayed list we start sending?" << std::endl;
         std::cerr << "         --verticalslopefilter: filter vertical slopes larger than this (default: 75.0), eg. white poles left/right" << std::endl;
         std::cerr << "Example: " << argv[0] << " --cid=253 --name=img.argb --width=640 --height=480 --verbose" << std::endl;
     }
@@ -82,8 +87,10 @@ int32_t main(int32_t argc, char **argv) {
         ////////////////////////////////////////////////////////////////////////
         // Parameters for lane-detector.
         const uint32_t THRESHOLD{commandlineArguments.count("verbose") != 0 ? static_cast<uint32_t>(std::stoi(commandlineArguments["threshold"])) : 115};
-        const float STEERING_SCALE{commandlineArguments.count("steeringscale") != 0 ? static_cast<float>(std::stof(commandlineArguments["steeringscale"])) : 10.f};
-        const float STEERING_OFFSET{commandlineArguments.count("steeringoffset") != 0 ? static_cast<float>(std::stof(commandlineArguments["steeringoffset"])) : 0.f};
+        const float K_P{commandlineArguments.count("k_p") != 0 ? static_cast<float>(std::stof(commandlineArguments["k_p"])) : 1.f};
+        const float K_D{commandlineArguments.count("k_d") != 0 ? static_cast<float>(std::stof(commandlineArguments["k_d"])) : 1.f};
+        const int32_t CAMERA_OFFSET{commandlineArguments.count("camera_offset") != 0 ? static_cast<int32_t>(std::stoi(commandlineArguments["camera_offset"])) : 0};
+        const uint32_t DELAY{commandlineArguments.count("delay") != 0 ? static_cast<uint32_t>(std::stoi(commandlineArguments["delay"])) : 1};
         const float VERTICAL_SLOPE_FILTER{commandlineArguments.count("verticalslopefilter") != 0 ? static_cast<float>(std::stof(commandlineArguments["verticalslopefilter"])) : 75.f};
 
         // Attach to the shared memory.
@@ -192,22 +199,27 @@ int32_t main(int32_t argc, char **argv) {
             ////////////////////////////////////////////////////////////////////
             // Create an OpenCV image header using the data in the shared memory.
             IplImage *iplimage{nullptr};
-            if (VERBOSE) {
-                CvSize size;
-                size.width = WIDTH;
-                size.height = HEIGHT;
+            CvSize size;
+            size.width = WIDTH;
+            size.height = HEIGHT;
 
-                iplimage = cvCreateImageHeader(size, IPL_DEPTH_8U, 4 /* four channels: ARGB */);
-                sharedMemory->lock();
-                {
-                    iplimage->imageData = sharedMemory->data();
-                    iplimage->imageDataOrigin = iplimage->imageData;
-                }
-                sharedMemory->unlock();
+            iplimage = cvCreateImageHeader(size, IPL_DEPTH_8U, 4 /* four channels: ARGB */);
+            sharedMemory->lock();
+            {
+                iplimage->imageData = sharedMemory->data();
+                iplimage->imageDataOrigin = iplimage->imageData;
             }
+            sharedMemory->unlock();
 
             // Interface to a running OpenDaVINCI session; here, you can send and receive messages.
             cluon::OD4Session od4{static_cast<uint16_t>(std::stoi(commandlineArguments["cid"]))};
+
+            CustomLine selectedLeftLine;
+            CustomLine selectedRightLine;
+
+            float oldPixelDistance{0};
+            cluon::data::TimeStamp before{cluon::time::now()};
+            std::deque<float> delayedSteerings;
 
             // Endless loop; end the program by pressing Ctrl-C.
             while (od4.isRunning()) {
@@ -262,6 +274,10 @@ int32_t main(int32_t argc, char **argv) {
                 {
                     // Cropping image.
                     img = img(cv::Rect(1, 6 * height / 16 - 1, width - 1, 8 * height / 16 - 1));
+
+                    // Region of interest.
+                    cv::rectangle(img, cv::Point(0, 0), cv::Point(img.size().width, img.size().height/2), cv::Scalar(0, 0, 0), CV_FILLED);
+                    cv::rectangle(img, cv::Point(0, img.size().height/2+60), cv::Point(img.size().width, img.size().height), cv::Scalar(0, 0, 0), CV_FILLED);
                     originalImage = originalImage(cv::Rect(1, 6 * height / 16 - 1, width - 1, 8 * height / 16 - 1));
 
 //                    if (VERBOSE) {
@@ -538,11 +554,11 @@ int32_t main(int32_t argc, char **argv) {
 
                 ////////////////////////////////////////////////////////////////
                 // Select the left and right lines and compute vanishing point.
-                CustomLine selectedLeftLine;
-                CustomLine selectedRightLine;
-                const cv::Point2f bottomCenter(width/2.0f, height);
+                const cv::Point2f bottomCenter(width/2.0f + CAMERA_OFFSET, height);
                 cv::Point2f VP;
                 bool gotVanishingPoint{false};
+                float lengthLeft{0};
+                float lengthRight{0};
                 {
                     for (auto i = 0u; i < cntDash; i++) {
                         CustomLine l = dashLines[i];
@@ -556,7 +572,8 @@ int32_t main(int32_t argc, char **argv) {
 
                         if (l.slope < 0) {
                             // If it's longer go for it...
-                            if (selectedLeftLine.length < l.length) {
+                            if (lengthLeft < l.length) {
+                                lengthLeft = l.length;
                                 // but only if it's not too far away from image center.
                                 selectedLeftLine = l;
                             }
@@ -564,7 +581,8 @@ int32_t main(int32_t argc, char **argv) {
 
                         // If slope is negative, it's a right line.
                         if (l.slope > 0) {
-                            if (selectedRightLine.length < l.length) {
+                            if (lengthRight < l.length) {
+                                lengthRight = l.length;
                                 selectedRightLine = l;
                             }
                         }
@@ -624,7 +642,8 @@ int32_t main(int32_t argc, char **argv) {
 
                 ////////////////////////////////////////////////////////////////
                 cv::Point2f filteredVanishingPoint;
-                float steering{0};
+                float pixelDistance{0};
+                float steeringWheelAngle{0};
                 {
                     // Apply Kalman filter
                     cv::Mat prediction = KF.predict();
@@ -641,11 +660,23 @@ int32_t main(int32_t argc, char **argv) {
                     filteredVanishingPoint = cv::Point2f(estimated.at<float>(0), estimated.at<float>(1));
 //                    cv::Point measPt(measurement(0), measurement(1));
 
+                    cluon::data::TimeStamp after{cluon::time::now()};
                     // Derive steering values.
-                    steering = bottomCenter.x - filteredVanishingPoint.x;
-                    steering /= width/STEERING_SCALE;
+                    pixelDistance = bottomCenter.x - filteredVanishingPoint.x;
+//                    steering /= width/STEERING_SCALE;
+
+                    float pixelRate = pixelDistance - oldPixelDistance;
+                    pixelRate /= cluon::time::deltaInMicroseconds(after, before)/(1000.0f*1000.0f);
+
+                    // Save for next iteration.
+                    oldPixelDistance = pixelDistance;
+                    before = after;
+
                     // Map to increments of 0.25;
-                    steering = floorf(steering * 4.0f)/4.0f + STEERING_OFFSET;
+                    steeringWheelAngle = K_P * pixelDistance + K_D * pixelRate;
+                    steeringWheelAngle = (steeringWheelAngle/180.0f) * static_cast<float>(M_PI);
+
+                    delayedSteerings.push_front(steeringWheelAngle);
 
                     if (VERBOSE) {
                         const cv::Scalar RED(0, 0, 255);
@@ -660,9 +691,16 @@ int32_t main(int32_t argc, char **argv) {
                         cv::line(imageWithVanishingPoint, bottomCenter, filteredVanishingPoint, GREEN, 3, 8, 0);
                         {
                             std::stringstream sstr;
-                            sstr << "Steering: " << steering;
+                            sstr << "Steering: " << steeringWheelAngle;
                             const std::string text = sstr.str();
-                            cv::putText(imageWithVanishingPoint, text.c_str(), cv::Point(10, 12), cv::FONT_HERSHEY_PLAIN, 1.0 /* font scale*/, GREEN);
+                            cv::putText(imageWithVanishingPoint, text.c_str(), cv::Point(10, 72), cv::FONT_HERSHEY_PLAIN, 1.1 /* font scale*/, RED);
+                        }
+
+                        {
+                            std::stringstream sstr;
+                            sstr << "pixelDistance: " << K_P * pixelDistance << ", pixelRate: " << K_D * pixelRate;
+                            const std::string text = sstr.str();
+                            cv::putText(imageWithVanishingPoint, text.c_str(), cv::Point(10, 82), cv::FONT_HERSHEY_PLAIN, 1.1 /* font scale*/, RED);
                         }
 
                         std::stringstream sstr;
@@ -674,9 +712,13 @@ int32_t main(int32_t argc, char **argv) {
                 }
 
                 ////////////////////////////////////////////////////////////////
-                opendlv::proxy::ActuationRequest ar;
-                ar.acceleration(0).steering(steering).isValid(true);
-                od4.send(ar);
+                if (delayedSteerings.size() > DELAY) {
+                    opendlv::proxy::ActuationRequest ar;
+                    ar.acceleration(0).steering(delayedSteerings.back()).isValid(true);
+                    od4.send(ar);
+
+                    delayedSteerings.pop_back();
+                }
             }
 
             if (nullptr != iplimage) {
